@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 	"trae-proxy-go/internal/config"
 	"trae-proxy-go/internal/logger"
 	"trae-proxy-go/internal/proxy"
+	"trae-proxy-go/internal/tray"
+	"trae-proxy-go/internal/webui"
 )
 
 func main() {
@@ -43,28 +47,79 @@ func main() {
 		*keyFile = filepath.Join("ca", fmt.Sprintf("%s.key", cfg.Domain))
 	}
 
-	// 检查证书文件
-	if _, err := os.Stat(*certFile); os.IsNotExist(err) {
-		log.Error("证书文件不存在: %s", *certFile)
-		log.Info("请先运行证书生成工具生成证书")
-		os.Exit(1)
-	}
-	if _, err := os.Stat(*keyFile); os.IsNotExist(err) {
-		log.Error("私钥文件不存在: %s", *keyFile)
-		log.Info("请先运行证书生成工具生成证书")
-		os.Exit(1)
-	}
+	iconFile := filepath.Join("internal", "tray", "icon.ico")
 
-	// 创建服务器
+	// 移除硬编码证书检查，允许无证书启动（后续可以在Web管理面板进行配置和生成证书）
+	webUI := webui.NewWebUI(*configPath, cfg, log)
+
+	// 热重载配置 goroutine
+	go func() {
+		var lastModTime time.Time
+		if info, err := os.Stat(*configPath); err == nil {
+			lastModTime = info.ModTime()
+		}
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			info, err := os.Stat(*configPath)
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(lastModTime) {
+				lastModTime = info.ModTime()
+				
+				newCfg, err := config.LoadConfig(*configPath)
+				if err != nil {
+					log.Error("配置文件变更，但加载失败: %v", err)
+					continue
+				}
+				
+				if *debug {
+					newCfg.Server.Debug = true
+				}
+				
+				// 并发覆盖结构体内容。Web UI 也使用此方式更新。
+				*cfg = *newCfg
+				log.Info("配置文件已从磁盘热重载")
+			}
+		}
+	}()
+
+	// 创建代理服务器
 	srv, err := proxy.NewServer(cfg, log, *certFile, *keyFile)
 	if err != nil {
-		log.Error("创建服务器失败: %v", err)
+		log.Error("创建代理服务器失败: %v", err)
 		os.Exit(1)
 	}
 
-	// 启动服务器
-	if err := srv.Start(); err != nil {
-		log.Error("服务器启动失败: %v", err)
-		os.Exit(1)
-	}
+	var startOnce sync.Once
+	var app *tray.App
+	app = tray.New(
+		cfg.Server.ManagePort,
+		iconFile,
+		func() {
+			startOnce.Do(func() {
+				go func() {
+					if err := webUI.Start(); err != nil {
+						log.Error("Web UI 启动失败: %v", err)
+					}
+				}()
+
+				go func() {
+					if err := srv.Start(); err != nil {
+						log.Error("代理服务器启动失败: %v", err)
+						app.Quit()
+					}
+				}()
+			})
+		},
+		func() {
+			log.Info("Trae Proxy 已退出")
+		},
+		webUI,
+		srv,
+	)
+
+	app.Run()
 }

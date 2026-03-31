@@ -25,6 +25,21 @@ func LoadConfig(configPath string) (*models.Config, error) {
 		return nil, fmt.Errorf("配置验证失败: %w", err)
 	}
 
+	// 设置默认值
+	if config.Server.ManagePort == 0 {
+		config.Server.ManagePort = 8080
+	}
+	// 将默认 Domain 添加到 Domains(如果 Domains 为空)
+	if len(config.Domains) == 0 && config.Domain != "" {
+		config.Domains = []string{config.Domain}
+	}
+
+	for i := range config.APIs {
+		if config.APIs[i].Format == "" {
+			config.APIs[i].Format = "openai" // 默认格式
+		}
+	}
+
 	return &config, nil
 }
 
@@ -44,8 +59,8 @@ func SaveConfig(config *models.Config, configPath string) error {
 
 // validateConfig 验证配置的有效性
 func validateConfig(config *models.Config) error {
-	if config.Domain == "" {
-		return fmt.Errorf("域名不能为空")
+	if config.Domain == "" && len(config.Domains) == 0 && len(config.Certificates) == 0 {
+		return fmt.Errorf("域名或证书列表不能为空")
 	}
 
 	if len(config.APIs) == 0 {
@@ -77,10 +92,12 @@ func validateConfig(config *models.Config) error {
 // GetDefaultConfig 获取默认配置
 func GetDefaultConfig() *models.Config {
 	return &models.Config{
-		Domain: "api.openai.com",
+		Domain:  "api.openai.com",
+		Domains: []string{"api.openai.com"},
 		APIs: []models.API{
 			{
 				Name:          "默认OpenAI API",
+				Format:        "openai",
 				Endpoint:      "https://api.openai.com",
 				CustomModelID: "gpt-4",
 				TargetModelID: "gpt-4",
@@ -89,8 +106,9 @@ func GetDefaultConfig() *models.Config {
 			},
 		},
 		Server: models.Server{
-			Port:  443,
-			Debug: true,
+			Port:       443,
+			ManagePort: 8080,
+			Debug:      true,
 		},
 	}
 }

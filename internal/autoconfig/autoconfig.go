@@ -8,22 +8,20 @@ import (
 	"strings"
 )
 
-// AutoConfigure 在证书生成后自动配置系统
-// domain: 要代理的域名
-// caDir: CA证书目录
-// installCA: 是否安装CA证书到系统信任存储
-// updateHosts: 是否更新hosts文件
+const (
+	hostsManagedBegin = "# >>> Trae-Proxy managed hosts >>>"
+	hostsManagedEnd   = "# <<< Trae-Proxy managed hosts <<<"
+)
+
 func AutoConfigure(domain, caDir string, installCA, updateHosts bool) error {
 	var errorMsgs []string
 
-	// 安装CA证书
 	if installCA {
 		if err := installCACertificate(caDir); err != nil {
 			errorMsgs = append(errorMsgs, fmt.Sprintf("安装CA证书失败: %v", err))
 		}
 	}
 
-	// 更新hosts文件
 	if updateHosts {
 		if err := updateHostsFile(domain); err != nil {
 			errorMsgs = append(errorMsgs, fmt.Sprintf("更新hosts文件失败: %v", err))
@@ -37,11 +35,9 @@ func AutoConfigure(domain, caDir string, installCA, updateHosts bool) error {
 	return nil
 }
 
-// installCACertificate 安装CA证书到系统信任存储
 func installCACertificate(caDir string) error {
 	caCertPath := filepath.Join(caDir, "ca.crt")
 
-	// 检查证书文件是否存在
 	if _, err := os.Stat(caCertPath); os.IsNotExist(err) {
 		return fmt.Errorf("CA证书文件不存在: %s", caCertPath)
 	}
@@ -49,39 +45,45 @@ func installCACertificate(caDir string) error {
 	return installCACert(caCertPath)
 }
 
-// updateHostsFile 更新hosts文件以将域名指向localhost
-func updateHostsFile(domain string) error {
-	var hostsPath string
+func GetHostsPath() (string, error) {
 	switch runtime.GOOS {
 	case "windows":
-		hostsPath = filepath.Join(os.Getenv("SystemRoot"), "System32", "drivers", "etc", "hosts")
-	default: // darwin, linux
-		hostsPath = "/etc/hosts"
+		systemRoot := os.Getenv("SystemRoot")
+		if systemRoot == "" {
+			return "", fmt.Errorf("未找到 SystemRoot 环境变量")
+		}
+		return filepath.Join(systemRoot, "System32", "drivers", "etc", "hosts"), nil
+	case "darwin", "linux":
+		return "/etc/hosts", nil
+	default:
+		return "", fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
+	}
+}
+
+func WriteHostsEntries(domains []string) error {
+	hostsPath, err := GetHostsPath()
+	if err != nil {
+		return err
 	}
 
-	// 读取现有hosts文件
 	content, err := os.ReadFile(hostsPath)
 	if err != nil {
 		return fmt.Errorf("读取hosts文件失败: %w", err)
 	}
 
-	// 检查是否已经存在该域名的配置
-	contentStr := string(content)
-	entry := fmt.Sprintf("127.0.0.1 %s", domain)
-
-	if containsHostsEntry(contentStr, domain) {
-		// 已存在，无需添加
-		return nil
+	normalizedDomains := normalizeDomains(domains)
+	if len(normalizedDomains) == 0 {
+		return fmt.Errorf("没有可写入的域名")
 	}
 
-	// 添加新条目
-	newContent := contentStr
-	if len(newContent) > 0 && newContent[len(newContent)-1] != '\n' {
-		newContent += "\n"
+	baseContent := stripManagedHostsBlock(string(content))
+	newContent := strings.TrimRight(baseContent, "\r\n")
+	if newContent != "" {
+		newContent += "\n\n"
 	}
-	newContent += fmt.Sprintf("# Added by Trae-Proxy\n%s\n", entry)
+	newContent += buildManagedHostsBlock(normalizedDomains)
+	newContent += "\n"
 
-	// 写入hosts文件（需要管理员权限）
 	if err := os.WriteFile(hostsPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("写入hosts文件失败（需要管理员/root权限）: %w", err)
 	}
@@ -89,20 +91,88 @@ func updateHostsFile(domain string) error {
 	return nil
 }
 
-// containsHostsEntry 检查hosts文件内容是否已包含该域名
+func RestoreHostsFile() error {
+	hostsPath, err := GetHostsPath()
+	if err != nil {
+		return err
+	}
+
+	content, err := os.ReadFile(hostsPath)
+	if err != nil {
+		return fmt.Errorf("读取hosts文件失败: %w", err)
+	}
+
+	restoredContent := stripManagedHostsBlock(string(content))
+	restoredContent = strings.TrimRight(restoredContent, "\r\n")
+	if restoredContent != "" {
+		restoredContent += "\n"
+	}
+
+	if err := os.WriteFile(hostsPath, []byte(restoredContent), 0644); err != nil {
+		return fmt.Errorf("恢复hosts文件失败（需要管理员/root权限）: %w", err)
+	}
+
+	return nil
+}
+
+func updateHostsFile(domain string) error {
+	return WriteHostsEntries([]string{domain})
+}
+
+func buildManagedHostsBlock(domains []string) string {
+	lines := []string{hostsManagedBegin}
+	for _, domain := range domains {
+		lines = append(lines, fmt.Sprintf("127.0.0.1 %s", domain))
+	}
+	lines = append(lines, hostsManagedEnd)
+	return strings.Join(lines, "\n")
+}
+
+func stripManagedHostsBlock(content string) string {
+	for {
+		start := strings.Index(content, hostsManagedBegin)
+		if start == -1 {
+			return content
+		}
+
+		end := strings.Index(content[start:], hostsManagedEnd)
+		if end == -1 {
+			return strings.TrimRight(content[:start], "\r\n")
+		}
+
+		end += start + len(hostsManagedEnd)
+		content = content[:start] + content[end:]
+	}
+}
+
+func normalizeDomains(domains []string) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(domains))
+
+	for _, domain := range domains {
+		normalized := strings.ToLower(strings.TrimSpace(domain))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+
+	return result
+}
+
 func containsHostsEntry(content, domain string) bool {
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
-		// 跳过注释和空行
 		trimmed := strings.TrimSpace(line)
 		if len(trimmed) == 0 || trimmed[0] == '#' {
 			continue
 		}
 
-		// 按空白字符分割，获取域名部分
 		fields := strings.Fields(trimmed)
-		// hosts文件格式: IP domain [aliases...]
-		// 检查第二个字段及之后是否有匹配的域名
 		for i := 1; i < len(fields); i++ {
 			if fields[i] == domain {
 				return true
@@ -112,13 +182,10 @@ func containsHostsEntry(content, domain string) bool {
 	return false
 }
 
-// NeedsElevatedPrivileges 检查是否需要提升权限
 func NeedsElevatedPrivileges() bool {
-	// 在所有平台上，安装CA证书和修改hosts文件都需要管理员权限
 	return true
 }
 
-// GetInstructions 获取手动配置说明（用于无法自动配置时）
 func GetInstructions(domain, caDir string) string {
 	caCertPath := filepath.Join(caDir, "ca.crt")
 

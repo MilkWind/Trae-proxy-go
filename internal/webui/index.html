@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+                           <title>Trae-Proxy 管理系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+    </style>
+</head>
+<body class="text-gray-800">
+    <div id="app" class="max-w-5xl mx-auto p-4 md:p-6 lg:p-8">
+        <header class="flex justify-between items-center bg-white shadow-md p-4 rounded-lg mb-6">
+            <h1 class="text-2xl font-bold text-blue-600">Trae-Proxy Go</h1>
+            <div class="space-x-4">
+                <button @click="loadConfig" class="text-gray-600 hover:text-blue-500">刷新数据</button>
+                <button @click="saveConfig" class="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition">保存配置</button>
+            </div>
+        </header>
+
+        <main v-if="config" class="grid grid-cols-1 gap-6">
+            <section class="bg-white p-6 rounded-lg shadow-md border-t-4 border-blue-500">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">服务设置</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">主代理域名 (旧版兼容)</label>
+                        <input v-model="config.domain" type="text" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">代理端口 (Port)</label>
+                        <input v-model.number="config.server.port" type="number" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">管理端口 (ManagePort)</label>
+                        <input v-model.number="config.server.manage_port" type="number" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    </div>
+                    <div class="flex items-center">
+                        <label class="flex items-center cursor-pointer mt-6">
+                            <input type="checkbox" v-model="config.server.debug" class="form-checkbox h-5 w-5 text-blue-600">
+                            <span class="ml-2 text-gray-700">开启 Debug 模式</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-lg shadow-md border-t-4 border-green-500">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-700">证书与多域名管理</h2>
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-600 mb-2">额外域名列表 (自动签发)</label>
+                    <div v-for="(domain, idx) in config.domains" :key="'dom-'+idx" class="flex gap-2 mb-2 items-center">
+                        <input v-model="config.domains[idx]" type="text" placeholder="例如 api.anthropic.com" class="flex-1 border p-2 rounded focus:ring-2 focus:ring-green-400 focus:outline-none">
+                        <button @click="generateCert(config.domains[idx])" class="bg-teal-500 text-white px-3 py-2 rounded shadow hover:bg-teal-600 text-sm whitespace-nowrap">签发证书</button>
+                        <button @click="config.domains.splice(idx, 1)" class="bg-red-500 text-white px-3 py-2 rounded shadow hover:bg-red-600 text-sm">删除</button>
+                    </div>
+                    <button @click="config.domains.push('')" class="mt-2 text-sm text-green-600 hover:text-green-800 font-medium">+ 添加域名</button>
+                </div>
+
+                <div class="mb-6 rounded-lg border border-green-100 bg-green-50 p-4">
+                    <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h3 class="text-lg font-medium text-gray-700">Hosts 管理</h3>
+                            <p class="text-sm text-gray-500 mt-1">将当前主域名和额外域名写入系统 hosts，或移除 Trae-Proxy 管理块。</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button @click="writeHosts" :disabled="hostsBusy" class="bg-emerald-600 text-white px-4 py-2 rounded shadow hover:bg-emerald-700 transition disabled:opacity-60 disabled:cursor-not-allowed">
+                                {{ hostsBusy ? '处理中...' : '写入 Hosts' }}
+                            </button>
+                            <button @click="restoreHosts" :disabled="hostsBusy" class="bg-amber-500 text-white px-4 py-2 rounded shadow hover:bg-amber-600 transition disabled:opacity-60 disabled:cursor-not-allowed">
+                                恢复 Hosts
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-3">需要以管理员权限启动程序，否则系统会拒绝写入 hosts 文件。</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-2">自定义多证书</label>
+                    <div v-for="(cert, idx) in config.certificates" :key="'cert-'+idx" class="bg-gray-50 p-4 rounded border mb-3 relative">
+                        <button @click="config.certificates.splice(idx, 1)" class="absolute top-2 right-2 text-red-500 hover:text-red-700">
+                            删除
+                        </button>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <input v-model="cert.domain" placeholder="匹配的域名" class="border p-2 rounded">
+                            <input v-model="cert.cert_file" placeholder="证书文件路径" class="border p-2 rounded">
+                            <input v-model="cert.key_file" placeholder="私钥文件路径" class="border p-2 rounded">
+                        </div>
+                    </div>
+                    <button @click="config.certificates.push({domain: '', cert_file: '', key_file: ''})" class="mt-2 text-sm text-green-600 hover:text-green-800 font-medium">+ 添加自定义证书</button>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-lg shadow-md border-t-4 border-purple-500">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-700">API 转发配置</h2>
+                    <button @click="addApi" class="bg-purple-600 text-white px-3 py-1 rounded shadow hover:bg-purple-700 text-sm">
+                        + 添加 API
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div v-for="(api, idx) in config.apis" :key="'api-'+idx" class="border rounded-lg p-4 bg-gray-50 relative">
+                        <div class="absolute top-4 right-4 flex space-x-2">
+                            <label class="inline-flex items-center cursor-pointer mr-2">
+                                <input type="checkbox" v-model="api.active" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                                <span class="ml-2 text-sm font-medium text-gray-700">启用</span>
+                            </label>
+                            <button @click="config.apis.splice(idx, 1)" class="text-red-500 hover:text-red-700">删除</button>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
+                            <div>
+                                <label class="block text-xs text-gray-500">别名/名称</label>
+                                <input v-model="api.name" class="w-full border p-2 rounded mt-1" placeholder="例如 DeepSeek">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500">API 格式</label>
+                                <select v-model="api.format" class="w-full border p-2 rounded mt-1 bg-white">
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic (Claude)</option>
+                                    <option value="gemini">Gemini</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500">目标 Endpoint</label>
+                                <input v-model="api.endpoint" class="w-full border p-2 rounded mt-1" placeholder="https://api.example.com">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500">自定义模型 ID (客户端请求)</label>
+                                <input v-model="api.custom_model_id" class="w-full border p-2 rounded mt-1" placeholder="gpt-4">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500">目标模型 ID (真实后端)</label>
+                                <input v-model="api.target_model_id" class="w-full border p-2 rounded mt-1" placeholder="真实模型名">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500">流式模式覆盖 (可选)</label>
+                                <select v-model="api.stream_mode" class="w-full border p-2 rounded mt-1 bg-white">
+                                    <option value="">(空) 跟随请求</option>
+                                    <option value="true">强制开启流</option>
+                                    <option value="false">强制关闭流</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500">自定义密钥覆盖 (可选)</label>
+                                <input v-model="api.custom_api_key" type="password" class="w-full border p-2 rounded mt-1" placeholder="sk-...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="config.apis.length === 0" class="text-gray-400 text-center py-4">无 API 配置</div>
+            </section>
+        </main>
+
+        <div v-else class="text-center py-20">
+            <p class="text-gray-500">正在加载配置...</p>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const config = ref(null);
+                const hostsBusy = ref(false);
+
+                const loadConfig = async () => {
+                    try {
+                        const res = await fetch('/api/config');
+                        const data = await res.json();
+                        if (!data.domains) data.domains = [];
+                        if (!data.certificates) data.certificates = [];
+                        if (!data.apis) data.apis = [];
+                        
+                        data.apis.forEach(api => {
+                            if (!api.format) api.format = 'openai';
+                        });
+
+                        config.value = data;
+                    } catch (err) {
+                        alert('加载配置失败，请查看控制台');
+                        console.error(err);
+                    }
+                };
+
+                const saveConfig = async () => {
+                    try {
+                        config.value.domains = config.value.domains.filter(d => d.trim() !== '');
+                        config.value.certificates = config.value.certificates.filter(c => c.domain.trim() !== '');
+                        
+                        const res = await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(config.value)
+                        });
+                        if (res.ok) {
+                            alert('配置保存成功！修改可能需要重启代理生效。');
+                        } else {
+                            const err = await res.json();
+                            alert('保存失败: ' + (err.error || '未知错误'));
+                        }
+                        await loadConfig();
+                    } catch (err) {
+                        alert('保存请求失败');
+                        console.error(err);
+                    }
+                };
+
+                const addApi = () => {
+                    config.value.apis.push({
+                        name: '新API',
+                        format: 'openai',
+                        endpoint: 'https://',
+                        custom_model_id: '',
+                        target_model_id: '',
+                        stream_mode: '',
+                        custom_api_key: '',
+                        active: true
+                    });
+                };
+
+                const generateCert = async (domain) => {
+                    if (!domain || domain.trim() === '') {
+                        alert('请先填写有效的域名');
+                        return;
+                    }
+                    if (!confirm(`确定要为 ${domain} 签发证书并自动配置 Hosts 吗？\n\n[注意] 自动配置需要你此时是【以管理员权限启动的代理服务器】！只有管理员权限才能改Hosts。`)) {
+                        return;
+                    }
+                    try {
+                        const res = await fetch('/api/cert/generate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ domain: domain.trim(), auto_config: true })
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.warning) {
+                                alert(data.warning);
+                            } else {
+                                alert('✅ 证书已生成并自动绑定 Hosts 成功！\n请重启你的浏览器和代码编辑器以生效（如有需要重启代理解决新路径）。');
+                            }
+                        } else {
+                            const err = await res.json();
+                            alert('证书生成失败: ' + (err.error || '未知错误'));
+                        }
+                    } catch (err) {
+                        alert('请求生成证书失败，请查看控制台');
+                        console.error(err);
+                    }
+                };
+
+                const writeHosts = async () => {
+                    if (!config.value) {
+                        return;
+                    }
+
+                    const configuredDomains = [config.value.domain, ...(config.value.domains || [])]
+                        .map(domain => (domain || '').trim())
+                        .filter(domain => domain !== '');
+
+                    if (configuredDomains.length === 0) {
+                        alert('请先配置主域名或额外域名，再写入 Hosts。');
+                        return;
+                    }
+
+                    if (!confirm(`确定要将以下域名写入 Hosts 吗？\n\n${configuredDomains.join('\n')}\n\n[注意] 需要以管理员权限启动程序。`)) {
+                        return;
+                    }
+
+                    hostsBusy.value = true;
+                    try {
+                        const res = await fetch('/api/hosts/write', {
+                            method: 'POST'
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                            const domains = Array.isArray(data.domains) ? data.domains : configuredDomains;
+                            alert(`Hosts 写入成功！\n\n已写入域名：\n${domains.join('\n')}`);
+                        } else {
+                            alert('写入 Hosts 失败: ' + (data.error || '未知错误'));
+                        }
+                    } catch (err) {
+                        alert('写入 Hosts 请求失败，请查看控制台');
+                        console.error(err);
+                    } finally {
+                        hostsBusy.value = false;
+                    }
+                };
+
+                const restoreHosts = async () => {
+                    if (!confirm('确定要恢复 Hosts 吗？\n\n这会移除 Trae-Proxy 写入的 Hosts 管理块，其它已有内容不会被修改。')) {
+                        return;
+                    }
+
+                    hostsBusy.value = true;
+                    try {
+                        const res = await fetch('/api/hosts/restore', {
+                            method: 'POST'
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                            alert('Hosts 恢复成功！已移除 Trae-Proxy 管理块。');
+                        } else {
+                            alert('恢复 Hosts 失败: ' + (data.error || '未知错误'));
+                        }
+                    } catch (err) {
+                        alert('恢复 Hosts 请求失败，请查看控制台');
+                        console.error(err);
+                    } finally {
+                        hostsBusy.value = false;
+                    }
+                };
+
+                onMounted(() => {
+                    loadConfig();
+                });
+
+                return {
+                    config,
+                    hostsBusy,
+                    loadConfig,
+                    saveConfig,
+                    addApi,
+                    generateCert,
+                    writeHosts,
+                    restoreHosts
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
