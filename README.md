@@ -1,6 +1,10 @@
 # Trae-Proxy Go
 
 一个高性能的 API 代理工具，用 Go 实现，专门用于拦截并重定向 OpenAI / Anthropic API 请求到自定义后端服务。
+测试情况
+- Trae 可以
+- vscode copliot 可以
+- 其他 待测
 
 ## 特性
 
