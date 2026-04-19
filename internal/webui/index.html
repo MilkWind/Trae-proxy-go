@@ -1,219 +1,584 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="h-full">
 <head>
-    <meta charset="UTF-8">
-                           <title>Trae-Proxy 管理系统</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trae-Proxy 管理系统</title>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class'
+        };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        :root {
+            color-scheme: light;
+            --bg: #f3f6fb;
+            --bg-soft: #eaf0f7;
+            --surface: rgba(255, 255, 255, 0.8);
+            --surface-solid: #ffffff;
+            --surface-muted: #f7fafc;
+            --text: #0f172a;
+            --text-soft: #475569;
+            --border: #dbe4ee;
+            --accent: #0f766e;
+            --accent-soft: #e6f3f1;
+            --accent-strong: #115e59;
+            --success: #059669;
+            --danger: #dc2626;
+            --ring: #14b8a6;
+            --shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+        }
+
+        html.dark {
+            color-scheme: dark;
+            --bg: #0a1220;
+            --bg-soft: #111b2e;
+            --surface: rgba(15, 23, 42, 0.72);
+            --surface-solid: #0f172a;
+            --surface-muted: #121c30;
+            --text: #e5edf9;
+            --text-soft: #9fb3ce;
+            --border: #243247;
+            --accent: #2dd4bf;
+            --accent-soft: #102e2b;
+            --accent-strong: #5eead4;
+            --success: #34d399;
+            --danger: #f87171;
+            --ring: #2dd4bf;
+            --shadow: 0 14px 42px rgba(2, 6, 23, 0.45);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Plus Jakarta Sans', 'Noto Sans SC', sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(55rem 35rem at 110% -10%, rgba(15, 118, 110, 0.12), transparent 65%),
+                radial-gradient(42rem 26rem at -10% 10%, rgba(148, 163, 184, 0.14), transparent 58%),
+                linear-gradient(160deg, var(--bg), var(--bg-soft));
+        }
+
+        .display-font {
+            font-family: 'Cormorant Garamond', 'Noto Sans SC', serif;
+        }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+        }
+
+        .label {
+            display: block;
+            margin-bottom: 0.4rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-soft);
+        }
+
+        .input,
+        .select {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 0.85rem;
+            background: var(--surface-solid);
+            color: var(--text);
+            padding: 0.62rem 0.78rem;
+            outline: none;
+            transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+        }
+
+        .input::placeholder {
+            color: color-mix(in srgb, var(--text-soft) 70%, transparent);
+        }
+
+        .input:focus,
+        .select:focus {
+            border-color: var(--ring);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 25%, transparent);
+        }
+
+        .btn {
+            border: 1px solid transparent;
+            border-radius: 0.85rem;
+            padding: 0.58rem 0.95rem;
+            font-size: 0.88rem;
+            font-weight: 600;
+            transition: all 180ms ease;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .btn:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent);
+        }
+
+        .btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #ffffff;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--accent-strong);
+        }
+
+        .btn-secondary {
+            background: var(--surface-solid);
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+            color: var(--accent-strong);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border-color: var(--border);
+            color: var(--text-soft);
+        }
+
+        .btn-ghost:hover:not(:disabled) {
+            color: var(--text);
+            border-color: color-mix(in srgb, var(--text-soft) 45%, var(--border));
+        }
+
+        .btn-danger {
+            background: color-mix(in srgb, var(--danger) 18%, var(--surface-solid));
+            border-color: color-mix(in srgb, var(--danger) 48%, var(--border));
+            color: var(--danger);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: color-mix(in srgb, var(--danger) 26%, var(--surface-solid));
+        }
+
+        .toggle {
+            position: relative;
+            width: 2.9rem;
+            height: 1.65rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: color-mix(in srgb, var(--surface-solid) 92%, var(--bg-soft));
+            transition: background-color 180ms ease, border-color 180ms ease;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+
+        .toggle::after {
+            content: '';
+            position: absolute;
+            top: 0.14rem;
+            left: 0.14rem;
+            width: 1.18rem;
+            height: 1.18rem;
+            border-radius: 999px;
+            background: #ffffff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+            transition: transform 180ms ease;
+        }
+
+        .toggle.on {
+            background: color-mix(in srgb, var(--accent) 72%, #ffffff);
+            border-color: color-mix(in srgb, var(--accent) 80%, var(--border));
+        }
+
+        .toggle.on::after {
+            transform: translateX(1.2rem);
+        }
+
+        .metric {
+            border: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+        .subtle {
+            color: var(--text-soft);
+        }
+
+        .surface-muted {
+            background: var(--surface-muted);
+            border: 1px solid var(--border);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
     </style>
 </head>
-<body class="text-gray-800">
-    <div id="app" class="max-w-5xl mx-auto p-4 md:p-6 lg:p-8">
-        <header class="flex justify-between items-center bg-white shadow-md p-4 rounded-lg mb-6">
-            <h1 class="text-2xl font-bold text-blue-600">Trae-Proxy Go</h1>
-            <div class="space-x-4">
-                <button @click="loadConfig" class="text-gray-600 hover:text-blue-500">刷新数据</button>
-                <button @click="saveConfig" class="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition">保存配置</button>
+<body>
+    <div id="app" class="mx-auto max-w-7xl px-4 py-5 md:px-8 md:py-8">
+        <header class="panel rounded-2xl p-5 md:p-6">
+            <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.28em] subtle">Proxy Dashboard</p>
+                    <h1 class="display-font mt-1 text-3xl font-semibold leading-tight md:text-4xl">Trae-Proxy Control Center</h1>
+                    <p class="mt-2 text-sm subtle">高端极简控制台，集中管理服务配置、证书签发与 API 转发。</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button class="btn btn-ghost" @click="toggleTheme" :aria-pressed="isDark.toString()">
+                        {{ isDark ? '切换浅色' : '切换深色' }}
+                    </button>
+                    <button class="btn btn-ghost" @click="loadConfig">刷新数据</button>
+                    <button class="btn btn-primary" @click="saveConfig" :disabled="!config">保存配置</button>
+                </div>
             </div>
         </header>
 
-        <main v-if="config" class="grid grid-cols-1 gap-6">
-            <section class="bg-white p-6 rounded-lg shadow-md border-t-4 border-blue-500">
-                <h2 class="text-xl font-semibold mb-4 text-gray-700">服务设置</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-600 mb-1">主代理域名 (旧版兼容)</label>
-                        <input v-model="config.domain" type="text" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-600 mb-1">代理端口 (Port)</label>
-                        <input v-model.number="config.server.port" type="number" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-600 mb-1">管理端口 (ManagePort)</label>
-                        <input v-model.number="config.server.manage_port" type="number" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
-                    </div>
-                    <div class="flex items-center">
-                        <label class="flex items-center cursor-pointer mt-6">
-                            <input type="checkbox" v-model="config.server.debug" class="form-checkbox h-5 w-5 text-blue-600">
-                            <span class="ml-2 text-gray-700">开启 Debug 模式</span>
+        <main v-if="config" class="mt-6 space-y-6">
+            <section class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <article class="metric rounded-xl p-4">
+                    <p class="text-xs subtle">主域名 + 附加域名</p>
+                    <p class="mt-1 text-2xl font-semibold">{{ dashboardStats.domains }}</p>
+                </article>
+                <article class="metric rounded-xl p-4">
+                    <p class="text-xs subtle">证书条目</p>
+                    <p class="mt-1 text-2xl font-semibold">{{ dashboardStats.certificates }}</p>
+                </article>
+                <article class="metric rounded-xl p-4">
+                    <p class="text-xs subtle">API 路由总数</p>
+                    <p class="mt-1 text-2xl font-semibold">{{ dashboardStats.apis }}</p>
+                </article>
+                <article class="metric rounded-xl p-4">
+                    <p class="text-xs subtle">已启用 API</p>
+                    <p class="mt-1 text-2xl font-semibold">{{ dashboardStats.enabledApis }}</p>
+                </article>
+            </section>
+
+            <section class="panel rounded-2xl p-5 md:p-6">
+                <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                    <h2 class="text-lg font-semibold">服务设置</h2>
+                    <p class="text-xs subtle">基础运行参数与调试开关</p>
+                </div>
+
+                <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <label>
+                        <span class="label">主代理域名（旧版兼容）</span>
+                        <input v-model="config.domain" type="text" class="input" placeholder="example.local" />
+                    </label>
+
+                    <label>
+                        <span class="label">代理端口 (Port)</span>
+                        <input v-model.number="config.server.port" type="number" class="input" />
+                    </label>
+
+                    <label>
+                        <span class="label">管理端口 (ManagePort)</span>
+                        <input v-model.number="config.server.manage_port" type="number" class="input" />
+                    </label>
+
+                    <div class="surface-muted rounded-xl p-3">
+                        <span class="label mb-3">调试模式</span>
+                        <label class="flex cursor-pointer items-center justify-between gap-3">
+                            <span class="text-sm">启用 Debug</span>
+                            <input type="checkbox" v-model="config.server.debug" class="sr-only" />
+                            <span class="toggle" :class="{ on: config.server.debug }" aria-hidden="true"></span>
                         </label>
                     </div>
                 </div>
             </section>
 
-            <section class="bg-white p-6 rounded-lg shadow-md border-t-4 border-green-500">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold text-gray-700">证书与多域名管理</h2>
-                </div>
-                
-                <div class="mb-6">
-                    <label class="block text-sm font-medium text-gray-600 mb-2">额外域名列表 (自动签发)</label>
-                    <div v-for="(domain, idx) in config.domains" :key="'dom-'+idx" class="flex gap-2 mb-2 items-center">
-                        <input v-model="config.domains[idx]" type="text" placeholder="例如 api.anthropic.com" class="flex-1 border p-2 rounded focus:ring-2 focus:ring-green-400 focus:outline-none">
-                        <button @click="generateCert(config.domains[idx])" class="bg-teal-500 text-white px-3 py-2 rounded shadow hover:bg-teal-600 text-sm whitespace-nowrap">签发证书</button>
-                        <button @click="config.domains.splice(idx, 1)" class="bg-red-500 text-white px-3 py-2 rounded shadow hover:bg-red-600 text-sm">删除</button>
-                    </div>
-                    <button @click="config.domains.push('')" class="mt-2 text-sm text-green-600 hover:text-green-800 font-medium">+ 添加域名</button>
+            <section class="panel rounded-2xl p-5 md:p-6">
+                <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                    <h2 class="text-lg font-semibold">证书与多域名管理</h2>
+                    <p class="text-xs subtle">自动签发、Hosts 写入与自定义证书</p>
                 </div>
 
-                <div class="mb-6 rounded-lg border border-green-100 bg-green-50 p-4">
+                <div class="mt-5">
+                    <div class="mb-2 flex items-center justify-between">
+                        <p class="label mb-0">附加域名列表（自动签发）</p>
+                        <button class="btn btn-ghost" @click="config.domains.push('')">+ 添加域名</button>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div
+                            v-for="(domain, idx) in config.domains"
+                            :key="`domain-${idx}`"
+                            class="surface-muted flex flex-col gap-2 rounded-xl p-3 md:flex-row md:items-center"
+                        >
+                            <input
+                                v-model="config.domains[idx]"
+                                type="text"
+                                placeholder="例如 api.anthropic.com"
+                                class="input flex-1"
+                            />
+                            <div class="flex gap-2">
+                                <button class="btn btn-secondary" @click="generateCert(config.domains[idx])">签发证书</button>
+                                <button class="btn btn-danger" @click="config.domains.splice(idx, 1)">删除</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="surface-muted mt-5 rounded-xl p-4">
                     <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
-                            <h3 class="text-lg font-medium text-gray-700">Hosts 管理</h3>
-                            <p class="text-sm text-gray-500 mt-1">将当前主域名和额外域名写入系统 hosts，或移除 Trae-Proxy 管理块。</p>
+                            <h3 class="font-semibold">Hosts 管理</h3>
+                            <p class="mt-1 text-sm subtle">将当前主域名和附加域名写入系统 hosts，或恢复 Trae-Proxy 管理块。</p>
                         </div>
                         <div class="flex flex-wrap gap-2">
-                            <button @click="writeHosts" :disabled="hostsBusy" class="bg-emerald-600 text-white px-4 py-2 rounded shadow hover:bg-emerald-700 transition disabled:opacity-60 disabled:cursor-not-allowed">
+                            <button class="btn btn-primary" @click="writeHosts" :disabled="hostsBusy">
                                 {{ hostsBusy ? '处理中...' : '写入 Hosts' }}
                             </button>
-                            <button @click="restoreHosts" :disabled="hostsBusy" class="bg-amber-500 text-white px-4 py-2 rounded shadow hover:bg-amber-600 transition disabled:opacity-60 disabled:cursor-not-allowed">
-                                恢复 Hosts
-                            </button>
+                            <button class="btn btn-secondary" @click="restoreHosts" :disabled="hostsBusy">恢复 Hosts</button>
                         </div>
                     </div>
-                    <p class="text-xs text-gray-500 mt-3">需要以管理员权限启动程序，否则系统会拒绝写入 hosts 文件。</p>
+                    <p class="mt-3 text-xs subtle">需要以管理员权限启动程序，否则系统会拒绝写入 hosts 文件。</p>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-600 mb-2">自定义多证书</label>
-                    <div v-for="(cert, idx) in config.certificates" :key="'cert-'+idx" class="bg-gray-50 p-4 rounded border mb-3 relative">
-                        <button @click="config.certificates.splice(idx, 1)" class="absolute top-2 right-2 text-red-500 hover:text-red-700">
-                            删除
+                <div class="mt-5">
+                    <div class="mb-2 flex items-center justify-between">
+                        <p class="label mb-0">自定义多证书</p>
+                        <button class="btn btn-ghost" @click="config.certificates.push({ domain: '', cert_file: '', key_file: '' })">
+                            + 添加证书
                         </button>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <input v-model="cert.domain" placeholder="匹配的域名" class="border p-2 rounded">
-                            <input v-model="cert.cert_file" placeholder="证书文件路径" class="border p-2 rounded">
-                            <input v-model="cert.key_file" placeholder="私钥文件路径" class="border p-2 rounded">
+                    </div>
+
+                    <div class="space-y-3">
+                        <div
+                            v-for="(cert, idx) in config.certificates"
+                            :key="`cert-${idx}`"
+                            class="surface-muted rounded-xl p-4"
+                        >
+                            <div class="mb-3 flex justify-end">
+                                <button class="btn btn-danger" @click="config.certificates.splice(idx, 1)">删除</button>
+                            </div>
+                            <div class="grid gap-3 md:grid-cols-3">
+                                <input v-model="cert.domain" placeholder="匹配域名" class="input" />
+                                <input v-model="cert.cert_file" placeholder="证书文件路径" class="input" />
+                                <input v-model="cert.key_file" placeholder="私钥文件路径" class="input" />
+                            </div>
                         </div>
                     </div>
-                    <button @click="config.certificates.push({domain: '', cert_file: '', key_file: ''})" class="mt-2 text-sm text-green-600 hover:text-green-800 font-medium">+ 添加自定义证书</button>
                 </div>
             </section>
 
-            <section class="bg-white p-6 rounded-lg shadow-md border-t-4 border-purple-500">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold text-gray-700">API 转发配置</h2>
-                    <button @click="addApi" class="bg-purple-600 text-white px-3 py-1 rounded shadow hover:bg-purple-700 text-sm">
-                        + 添加 API
-                    </button>
+            <section class="panel rounded-2xl p-5 md:p-6">
+                <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                    <h2 class="text-lg font-semibold">API 转发配置</h2>
+                    <button class="btn btn-primary" @click="addApi">+ 添加 API</button>
                 </div>
-                
-                <div class="space-y-4">
-                    <div v-for="(api, idx) in config.apis" :key="'api-'+idx" class="border rounded-lg p-4 bg-gray-50 relative">
-                        <div class="absolute top-4 right-4 flex space-x-2">
-                            <label class="inline-flex items-center cursor-pointer mr-2">
-                                <input type="checkbox" v-model="api.active" class="sr-only peer">
-                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                                <span class="ml-2 text-sm font-medium text-gray-700">启用</span>
-                            </label>
-                            <button @click="config.apis.splice(idx, 1)" class="text-red-500 hover:text-red-700">删除</button>
-                        </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
-                            <div>
-                                <label class="block text-xs text-gray-500">别名/名称</label>
-                                <input v-model="api.name" class="w-full border p-2 rounded mt-1" placeholder="例如 DeepSeek">
+
+                <div v-if="config.apis.length === 0" class="surface-muted mt-4 rounded-xl p-6 text-center text-sm subtle">
+                    暂无 API 配置，点击“添加 API”开始创建。
+                </div>
+
+                <div v-else class="mt-4 space-y-4">
+                    <article
+                        v-for="(api, idx) in config.apis"
+                        :key="`api-${idx}`"
+                        class="surface-muted rounded-xl p-4"
+                    >
+                        <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                            <p class="text-sm font-semibold">路由 {{ idx + 1 }}：{{ api.name || '未命名 API' }}</p>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <label class="flex cursor-pointer items-center gap-2">
+                                    <span class="text-sm subtle">启用</span>
+                                    <input type="checkbox" v-model="api.active" class="sr-only" />
+                                    <span class="toggle" :class="{ on: api.active }" aria-hidden="true"></span>
+                                </label>
+                                <button class="btn btn-danger" @click="config.apis.splice(idx, 1)">删除</button>
                             </div>
-                            <div>
-                                <label class="block text-xs text-gray-500">API 格式</label>
-                                <select v-model="api.format" class="w-full border p-2 rounded mt-1 bg-white">
+                        </div>
+
+                        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            <label>
+                                <span class="label">别名 / 名称</span>
+                                <input v-model="api.name" class="input" placeholder="例如 DeepSeek" />
+                            </label>
+
+                            <label>
+                                <span class="label">API 格式</span>
+                                <select v-model="api.format" class="select">
                                     <option value="openai">OpenAI</option>
                                     <option value="anthropic">Anthropic (Claude)</option>
                                     <option value="gemini">Gemini</option>
                                 </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs text-gray-500">目标 Endpoint</label>
-                                <input v-model="api.endpoint" class="w-full border p-2 rounded mt-1" placeholder="https://api.example.com">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-gray-500">自定义模型 ID (客户端请求)</label>
-                                <input v-model="api.custom_model_id" class="w-full border p-2 rounded mt-1" placeholder="gpt-4">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-gray-500">目标模型 ID (真实后端)</label>
-                                <input v-model="api.target_model_id" class="w-full border p-2 rounded mt-1" placeholder="真实模型名">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-gray-500">流式模式覆盖 (可选)</label>
-                                <select v-model="api.stream_mode" class="w-full border p-2 rounded mt-1 bg-white">
+                            </label>
+
+                            <label>
+                                <span class="label">目标 Endpoint</span>
+                                <input v-model="api.endpoint" class="input" placeholder="https://api.example.com" />
+                            </label>
+
+                            <label>
+                                <span class="label">自定义模型 ID（客户端请求）</span>
+                                <input v-model="api.custom_model_id" class="input" placeholder="gpt-4" />
+                            </label>
+
+                            <label>
+                                <span class="label">目标模型 ID（后端实际）</span>
+                                <input v-model="api.target_model_id" class="input" placeholder="真实模型名" />
+                            </label>
+
+                            <label>
+                                <span class="label">流式模式覆盖（可选）</span>
+                                <select v-model="api.stream_mode" class="select">
                                     <option value="">(空) 跟随请求</option>
-                                    <option value="true">强制开启流</option>
-                                    <option value="false">强制关闭流</option>
+                                    <option value="true">强制开启流式</option>
+                                    <option value="false">强制关闭流式</option>
                                 </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs text-gray-500">自定义密钥覆盖 (可选)</label>
-                                <input v-model="api.custom_api_key" type="password" class="w-full border p-2 rounded mt-1" placeholder="sk-...">
-                            </div>
+                            </label>
+
+                            <label class="md:col-span-2 xl:col-span-1">
+                                <span class="label">自定义密钥覆盖（可选）</span>
+                                <input v-model="api.custom_api_key" type="password" class="input" placeholder="sk-..." />
+                            </label>
                         </div>
-                    </div>
+                    </article>
                 </div>
-                <div v-if="config.apis.length === 0" class="text-gray-400 text-center py-4">无 API 配置</div>
             </section>
         </main>
 
-        <div v-else class="text-center py-20">
-            <p class="text-gray-500">正在加载配置...</p>
-        </div>
+        <section v-else class="panel mt-6 rounded-2xl p-10 text-center">
+            <p class="subtle">正在加载配置...</p>
+        </section>
     </div>
 
     <script>
-        const { createApp, ref, onMounted } = Vue;
+        const { createApp, ref, computed, onMounted } = Vue;
 
         createApp({
             setup() {
                 const config = ref(null);
                 const hostsBusy = ref(false);
+                const isDark = ref(false);
+
+                const toStringBool = (value) => {
+                    if (value === true || value === 'true') return 'true';
+                    if (value === false || value === 'false') return 'false';
+                    return '';
+                };
+
+                const normalizeConfig = (data) => {
+                    const normalized = { ...data };
+                    normalized.server = normalized.server || { port: 443, manage_port: 8080, debug: false };
+                    normalized.domain = normalized.domain || '';
+
+                    if (!Array.isArray(normalized.domains)) normalized.domains = [];
+                    if (!Array.isArray(normalized.certificates)) normalized.certificates = [];
+                    if (!Array.isArray(normalized.apis)) normalized.apis = [];
+
+                    normalized.certificates = normalized.certificates.map((cert) => ({
+                        domain: cert?.domain || '',
+                        cert_file: cert?.cert_file || '',
+                        key_file: cert?.key_file || ''
+                    }));
+
+                    normalized.apis = normalized.apis.map((api) => ({
+                        name: api?.name || '',
+                        format: api?.format || 'openai',
+                        endpoint: api?.endpoint || '',
+                        custom_model_id: api?.custom_model_id || '',
+                        target_model_id: api?.target_model_id || '',
+                        stream_mode: toStringBool(api?.stream_mode),
+                        custom_api_key: api?.custom_api_key || '',
+                        active: api?.active !== false
+                    }));
+
+                    return normalized;
+                };
+
+                const applyTheme = (mode) => {
+                    const dark = mode === 'dark';
+                    document.documentElement.classList.toggle('dark', dark);
+                    isDark.value = dark;
+                    localStorage.setItem('trae-theme', mode);
+                };
+
+                const initTheme = () => {
+                    const savedTheme = localStorage.getItem('trae-theme');
+                    if (savedTheme === 'light' || savedTheme === 'dark') {
+                        applyTheme(savedTheme);
+                        return;
+                    }
+
+                    const preferDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    applyTheme(preferDark ? 'dark' : 'light');
+                };
+
+                const toggleTheme = () => {
+                    applyTheme(isDark.value ? 'light' : 'dark');
+                };
 
                 const loadConfig = async () => {
                     try {
                         const res = await fetch('/api/config');
                         const data = await res.json();
-                        if (!data.domains) data.domains = [];
-                        if (!data.certificates) data.certificates = [];
-                        if (!data.apis) data.apis = [];
-                        
-                        data.apis.forEach(api => {
-                            if (!api.format) api.format = 'openai';
-                        });
-
-                        config.value = data;
+                        config.value = normalizeConfig(data);
                     } catch (err) {
-                        alert('加载配置失败，请查看控制台');
+                        alert('加载配置失败，请查看控制台。');
                         console.error(err);
                     }
                 };
 
                 const saveConfig = async () => {
+                    if (!config.value) return;
+
                     try {
-                        config.value.domains = config.value.domains.filter(d => d.trim() !== '');
-                        config.value.certificates = config.value.certificates.filter(c => c.domain.trim() !== '');
-                        
+                        config.value.domains = config.value.domains
+                            .map((domain) => (domain || '').trim())
+                            .filter((domain) => domain !== '');
+
+                        config.value.certificates = config.value.certificates
+                            .map((cert) => ({
+                                domain: (cert.domain || '').trim(),
+                                cert_file: (cert.cert_file || '').trim(),
+                                key_file: (cert.key_file || '').trim()
+                            }))
+                            .filter((cert) => cert.domain !== '');
+
                         const res = await fetch('/api/config', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(config.value)
                         });
+
                         if (res.ok) {
-                            alert('配置保存成功！修改可能需要重启代理生效。');
+                            alert('配置保存成功，修改可能需要重启代理后生效。');
                         } else {
                             const err = await res.json();
                             alert('保存失败: ' + (err.error || '未知错误'));
                         }
+
                         await loadConfig();
                     } catch (err) {
-                        alert('保存请求失败');
+                        alert('保存请求失败，请查看控制台。');
                         console.error(err);
                     }
                 };
 
                 const addApi = () => {
                     config.value.apis.push({
-                        name: '新API',
+                        name: '',
                         format: 'openai',
                         endpoint: 'https://',
                         custom_model_id: '',
@@ -226,67 +591,67 @@
 
                 const generateCert = async (domain) => {
                     if (!domain || domain.trim() === '') {
-                        alert('请先填写有效的域名');
+                        alert('请先填写有效域名。');
                         return;
                     }
-                    if (!confirm(`确定要为 ${domain} 签发证书并自动配置 Hosts 吗？\n\n[注意] 自动配置需要你此时是【以管理员权限启动的代理服务器】！只有管理员权限才能改Hosts。`)) {
+
+                    if (!confirm(`确定要为 ${domain} 签发证书并自动配置 Hosts 吗？\n\n[注意] 自动配置需要代理服务以管理员权限运行。`)) {
                         return;
                     }
+
                     try {
                         const res = await fetch('/api/cert/generate', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ domain: domain.trim(), auto_config: true })
                         });
+
                         if (res.ok) {
                             const data = await res.json();
                             if (data.warning) {
                                 alert(data.warning);
                             } else {
-                                alert('✅ 证书已生成并自动绑定 Hosts 成功！\n请重启你的浏览器和代码编辑器以生效（如有需要重启代理解决新路径）。');
+                                alert('证书已生成并自动绑定 Hosts 成功。\n建议重启浏览器和代码编辑器以生效。');
                             }
                         } else {
                             const err = await res.json();
                             alert('证书生成失败: ' + (err.error || '未知错误'));
                         }
                     } catch (err) {
-                        alert('请求生成证书失败，请查看控制台');
+                        alert('证书生成请求失败，请查看控制台。');
                         console.error(err);
                     }
                 };
 
                 const writeHosts = async () => {
-                    if (!config.value) {
-                        return;
-                    }
+                    if (!config.value) return;
 
                     const configuredDomains = [config.value.domain, ...(config.value.domains || [])]
-                        .map(domain => (domain || '').trim())
-                        .filter(domain => domain !== '');
+                        .map((domain) => (domain || '').trim())
+                        .filter((domain) => domain !== '');
 
                     if (configuredDomains.length === 0) {
-                        alert('请先配置主域名或额外域名，再写入 Hosts。');
+                        alert('请先配置主域名或附加域名，再写入 Hosts。');
                         return;
                     }
 
-                    if (!confirm(`确定要将以下域名写入 Hosts 吗？\n\n${configuredDomains.join('\n')}\n\n[注意] 需要以管理员权限启动程序。`)) {
+                    if (!confirm(`确定将以下域名写入 Hosts 吗？\n\n${configuredDomains.join('\n')}\n\n[注意] 需要管理员权限。`)) {
                         return;
                     }
 
                     hostsBusy.value = true;
                     try {
-                        const res = await fetch('/api/hosts/write', {
-                            method: 'POST'
-                        });
+                        const res = await fetch('/api/hosts/write', { method: 'POST' });
                         const data = await res.json();
+
                         if (res.ok) {
                             const domains = Array.isArray(data.domains) ? data.domains : configuredDomains;
-                            alert(`Hosts 写入成功！\n\n已写入域名：\n${domains.join('\n')}`);
+                            alert(`Hosts 写入成功。\n\n已写入域名：\n${domains.join('\n')}`);
                         } else {
                             alert('写入 Hosts 失败: ' + (data.error || '未知错误'));
                         }
                     } catch (err) {
-                        alert('写入 Hosts 请求失败，请查看控制台');
+                        alert('写入 Hosts 请求失败，请查看控制台。');
                         console.error(err);
                     } finally {
                         hostsBusy.value = false;
@@ -294,43 +659,75 @@
                 };
 
                 const restoreHosts = async () => {
-                    if (!confirm('确定要恢复 Hosts 吗？\n\n这会移除 Trae-Proxy 写入的 Hosts 管理块，其它已有内容不会被修改。')) {
+                    if (!confirm('确定恢复 Hosts 吗？\n\n这会移除 Trae-Proxy 写入的 Hosts 管理块，其他内容不会被修改。')) {
                         return;
                     }
 
                     hostsBusy.value = true;
                     try {
-                        const res = await fetch('/api/hosts/restore', {
-                            method: 'POST'
-                        });
+                        const res = await fetch('/api/hosts/restore', { method: 'POST' });
                         const data = await res.json();
+
                         if (res.ok) {
-                            alert('Hosts 恢复成功！已移除 Trae-Proxy 管理块。');
+                            alert('Hosts 恢复成功，已移除 Trae-Proxy 管理块。');
                         } else {
                             alert('恢复 Hosts 失败: ' + (data.error || '未知错误'));
                         }
                     } catch (err) {
-                        alert('恢复 Hosts 请求失败，请查看控制台');
+                        alert('恢复 Hosts 请求失败，请查看控制台。');
                         console.error(err);
                     } finally {
                         hostsBusy.value = false;
                     }
                 };
 
+                const dashboardStats = computed(() => {
+                    if (!config.value) {
+                        return {
+                            domains: 0,
+                            certificates: 0,
+                            apis: 0,
+                            enabledApis: 0
+                        };
+                    }
+
+                    const extraDomains = Array.isArray(config.value.domains)
+                        ? config.value.domains.filter((domain) => (domain || '').trim() !== '').length
+                        : 0;
+
+                    const mainDomain = (config.value.domain || '').trim() ? 1 : 0;
+                    const certificates = Array.isArray(config.value.certificates) ? config.value.certificates.length : 0;
+                    const apis = Array.isArray(config.value.apis) ? config.value.apis.length : 0;
+                    const enabledApis = Array.isArray(config.value.apis)
+                        ? config.value.apis.filter((api) => api.active !== false).length
+                        : 0;
+
+                    return {
+                        domains: mainDomain + extraDomains,
+                        certificates,
+                        apis,
+                        enabledApis
+                    };
+                });
+
                 onMounted(() => {
+                    initTheme();
                     loadConfig();
                 });
 
                 return {
                     config,
                     hostsBusy,
+                    isDark,
+                    dashboardStats,
                     loadConfig,
                     saveConfig,
                     addApi,
                     generateCert,
                     writeHosts,
-                    restoreHosts
-                }
+                    restoreHosts,
+                    toggleTheme
+                };
             }
         }).mount('#app');
     </script>
