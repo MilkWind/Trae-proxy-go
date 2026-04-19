@@ -47,3 +47,5 @@ ca/
 *.log
 debug_request.log
 
+# Cache
+__pycache__/
