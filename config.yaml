@@ -1,7 +1,18 @@
-domain: ""
+domain: api.openai.com
 domains:
     - api.openai.com
     - api.anthropic.com
+    - api3.cursor.sh
+    - api2.cursor.sh
+    - api.cursor.sh
+    - cursor.sh
+domain_enabled:
+    api.anthropic.com: true
+    api.cursor.sh: true
+    api.openai.com: true
+    api2.cursor.sh: true
+    api3.cursor.sh: true
+    cursor.sh: true
 certificates: []
 apis:
     - name: gpt-5.4

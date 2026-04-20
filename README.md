@@ -54,6 +54,7 @@ go mod download
 
 go build -o trae-proxy     ./cmd/proxy
 go build -o trae-proxy-cli ./cmd/cli
+go build -o main.exe ./cmd/proxy
 ```
 
 ### 配置文件
