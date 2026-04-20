@@ -50,6 +50,8 @@ func (h *Handler) HandleV1Root(w http.ResponseWriter, r *http.Request) {
 		"message": "OpenAI API v1 endpoint",
 		"endpoints": map[string]string{
 			"chat/completions": "/v1/chat/completions",
+			"responses":        "/v1/responses",
+			"messages":         "/v1/messages",
 		},
 	}
 	h.writeJSON(w, response)
@@ -68,6 +70,16 @@ func (h *Handler) findAnthropicAPIByModelID(modelID string) *models.API {
 	for i := range h.config.APIs {
 		api := &h.config.APIs[i]
 		if api.Active && api.Format == "anthropic" && api.CustomModelID == modelID {
+			return api
+		}
+	}
+	return nil
+}
+
+func (h *Handler) findResponsesAPIByModelID(modelID string) *models.API {
+	for i := range h.config.APIs {
+		api := &h.config.APIs[i]
+		if api.Active && api.Format == "responses" && api.CustomModelID == modelID {
 			return api
 		}
 	}
@@ -133,10 +145,10 @@ func (h *Handler) HandleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logger.Info("handling models four")
-	// 默认返回 OpenAI 格式模型列表
+	// 默认返回 OpenAI 格式模型列表（包含 openai 与 responses 两类）
 	models := []map[string]interface{}{}
 	for _, api := range h.config.APIs {
-		if api.Active && (api.Format == "" || api.Format == "openai") {
+		if api.Active && (api.Format == "" || api.Format == "openai" || api.Format == "responses") {
 			models = append(models, map[string]interface{}{
 				"id":       api.CustomModelID,
 				"object":   "model",
@@ -164,6 +176,16 @@ func (h *Handler) HandleModelByID(w http.ResponseWriter, r *http.Request) {
 	modelID := strings.TrimPrefix(r.URL.Path, "/v1/models/")
 	if modelID == "" || strings.Contains(modelID, "/") {
 		http.NotFound(w, r)
+		return
+	}
+
+	if responsesAPI := h.findResponsesAPIByModelID(modelID); responsesAPI != nil {
+		h.writeJSON(w, map[string]interface{}{
+			"id":       responsesAPI.CustomModelID,
+			"object":   "model",
+			"created":  1,
+			"owned_by": "trae-proxy",
+		})
 		return
 	}
 
@@ -317,6 +339,340 @@ func (h *Handler) HandleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		responseJSON["model"] = customModelID
 	}
 
+	h.writeJSON(w, responseJSON)
+}
+
+func buildMessagesFromResponsesInput(inputData interface{}) []interface{} {
+	messages := make([]interface{}, 0)
+
+	appendMessage := func(role string, content interface{}) {
+		message := map[string]interface{}{
+			"role":    role,
+			"content": content,
+		}
+		messages = append(messages, message)
+	}
+
+	appendFromParts := func(role string, parts []interface{}) {
+		textParts := make([]string, 0)
+		for _, p := range parts {
+			part, ok := p.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			partType, _ := part["type"].(string)
+			switch partType {
+			case "input_text", "output_text", "text":
+				if txt, ok := part["text"].(string); ok && txt != "" {
+					textParts = append(textParts, txt)
+				}
+			}
+		}
+		if len(textParts) > 0 {
+			appendMessage(role, strings.Join(textParts, "\n"))
+		}
+	}
+
+	switch v := inputData.(type) {
+	case string:
+		if v != "" {
+			appendMessage("user", v)
+		}
+	case []interface{}:
+		for _, item := range v {
+			switch iv := item.(type) {
+			case string:
+				if iv != "" {
+					appendMessage("user", iv)
+				}
+			case map[string]interface{}:
+				role, _ := iv["role"].(string)
+				if role == "" {
+					role = "user"
+				}
+				if itemType, _ := iv["type"].(string); itemType == "message" {
+					if contentArr, ok := iv["content"].([]interface{}); ok {
+						appendFromParts(role, contentArr)
+						continue
+					}
+				}
+				if content, ok := iv["content"]; ok {
+					switch cv := content.(type) {
+					case string:
+						if cv != "" {
+							appendMessage(role, cv)
+						}
+					case []interface{}:
+						appendFromParts(role, cv)
+					}
+				}
+			}
+		}
+	}
+
+	return messages
+}
+
+func convertResponsesToChatRequest(reqJSON map[string]interface{}) map[string]interface{} {
+	ccReq := map[string]interface{}{
+		"model":  reqJSON["model"],
+		"stream": reqJSON["stream"],
+	}
+
+	messages := make([]interface{}, 0)
+
+	if instructions, ok := reqJSON["instructions"].(string); ok && instructions != "" {
+		messages = append(messages, map[string]interface{}{
+			"role":    "system",
+			"content": instructions,
+		})
+	}
+
+	if inputData, ok := reqJSON["input"]; ok {
+		messages = append(messages, buildMessagesFromResponsesInput(inputData)...)
+	}
+	ccReq["messages"] = messages
+
+	if tools, ok := reqJSON["tools"]; ok {
+		ccReq["tools"] = tools
+	}
+	if temperature, ok := reqJSON["temperature"]; ok {
+		ccReq["temperature"] = temperature
+	}
+	if topP, ok := reqJSON["top_p"]; ok {
+		ccReq["top_p"] = topP
+	}
+	if maxOutputTokens, ok := reqJSON["max_output_tokens"]; ok {
+		ccReq["max_tokens"] = maxOutputTokens
+	}
+	if toolChoice, ok := reqJSON["tool_choice"]; ok {
+		ccReq["tool_choice"] = toolChoice
+	}
+
+	return ccReq
+}
+
+func convertChatResponseToResponses(responseJSON map[string]interface{}, customModelID string) map[string]interface{} {
+	resp := map[string]interface{}{
+		"id":     responseJSON["id"],
+		"object": "response",
+		"status": "completed",
+		"model":  customModelID,
+	}
+
+	usage := map[string]interface{}{
+		"input_tokens":  0,
+		"output_tokens": 0,
+		"total_tokens":  0,
+	}
+	if rawUsage, ok := responseJSON["usage"].(map[string]interface{}); ok {
+		if v, ok := rawUsage["prompt_tokens"]; ok {
+			usage["input_tokens"] = v
+		}
+		if v, ok := rawUsage["completion_tokens"]; ok {
+			usage["output_tokens"] = v
+		}
+		if v, ok := rawUsage["total_tokens"]; ok {
+			usage["total_tokens"] = v
+		}
+	}
+	resp["usage"] = usage
+
+	output := make([]interface{}, 0)
+	if choices, ok := responseJSON["choices"].([]interface{}); ok && len(choices) > 0 {
+		if choice, ok := choices[0].(map[string]interface{}); ok {
+			if finishReason, ok := choice["finish_reason"].(string); ok && finishReason == "length" {
+				resp["status"] = "incomplete"
+			}
+			if message, ok := choice["message"].(map[string]interface{}); ok {
+				if reasoning, ok := message["reasoning_content"].(string); ok && reasoning != "" {
+					output = append(output, map[string]interface{}{
+						"type": "reasoning",
+						"id":   "rs_from_chat",
+						"summary": []interface{}{
+							map[string]interface{}{
+								"type": "summary_text",
+								"text": reasoning,
+							},
+						},
+					})
+				}
+
+				if content, ok := message["content"].(string); ok && content != "" {
+					output = append(output, map[string]interface{}{
+						"type":   "message",
+						"id":     "msg_from_chat",
+						"status": "completed",
+						"role":   "assistant",
+						"content": []interface{}{
+							map[string]interface{}{
+								"type": "output_text",
+								"text": content,
+							},
+						},
+					})
+				}
+
+				if toolCalls, ok := message["tool_calls"].([]interface{}); ok {
+					for _, tc := range toolCalls {
+						toolCall, ok := tc.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						functionData, _ := toolCall["function"].(map[string]interface{})
+						name, _ := functionData["name"].(string)
+						arguments, _ := functionData["arguments"].(string)
+						callID, _ := toolCall["id"].(string)
+						if callID == "" {
+							callID = "call_from_chat"
+						}
+						output = append(output, map[string]interface{}{
+							"type":      "function_call",
+							"id":        "fc_" + callID,
+							"status":    "completed",
+							"call_id":   callID,
+							"name":      name,
+							"arguments": arguments,
+						})
+					}
+				}
+			}
+		}
+	}
+	resp["output"] = output
+	return resp
+}
+
+// HandleResponses 处理 Cursor/OpenAI Responses 格式请求
+func (h *Handler) HandleResponses(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "方法不允许", http.StatusMethodNotAllowed)
+		return
+	}
+
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "application/json" {
+		h.writeError(w, "Content-Type必须为application/json", http.StatusBadRequest)
+		return
+	}
+
+	var reqJSON map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&reqJSON); err != nil {
+		h.writeError(w, fmt.Sprintf("无效的JSON请求体: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	requestedModel, _ := reqJSON["model"].(string)
+	selectedBackend := selectBackendByModel(h.config, requestedModel)
+	if selectedBackend == nil {
+		h.writeError(w, "未找到可用的后端API配置", http.StatusInternalServerError)
+		return
+	}
+
+	targetAPIURL := selectedBackend.Endpoint
+	targetModelID := selectedBackend.TargetModelID
+	customModelID := selectedBackend.CustomModelID
+	streamMode := selectedBackend.StreamMode
+
+	if h.logger != nil {
+		h.logger.Info("Responses 选择后端: %s -> %s", selectedBackend.Name, targetAPIURL)
+	}
+
+	reqJSON["model"] = targetModelID
+
+	if streamMode == "true" {
+		reqJSON["stream"] = true
+	} else if streamMode == "false" {
+		reqJSON["stream"] = false
+	}
+
+	targetURL := fmt.Sprintf("%s/v1/responses", targetAPIURL)
+	requestBody := reqJSON
+	backendFormat := selectedBackend.Format
+	switch backendFormat {
+	case "responses":
+		// pass-through
+	case "openai", "":
+		targetURL = fmt.Sprintf("%s/v1/chat/completions", targetAPIURL)
+		requestBody = convertResponsesToChatRequest(reqJSON)
+	case "anthropic":
+		h.writeError(w, "当前版本尚不支持 /v1/responses 直接桥接到 anthropic 后端", http.StatusBadRequest)
+		return
+	default:
+		// unknown format defaults to /v1/responses for compatibility
+	}
+
+	reqBody, err := json.Marshal(requestBody)
+	if err != nil {
+		h.writeError(w, fmt.Sprintf("序列化请求失败: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		h.writeError(w, fmt.Sprintf("创建请求失败: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if selectedBackend.CustomAPIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+selectedBackend.CustomAPIKey)
+	} else if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+	if apiKey := r.Header.Get("x-api-key"); apiKey != "" {
+		req.Header.Set("x-api-key", apiKey)
+	}
+	if openAIKey := r.Header.Get("OpenAI-Beta"); openAIKey != "" {
+		req.Header.Set("OpenAI-Beta", openAIKey)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("Responses 请求失败: %v", err)
+		}
+		h.writeError(w, fmt.Sprintf("请求异常: %v", err), http.StatusServiceUnavailable)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		errorBody, _ := io.ReadAll(resp.Body)
+		var errorJSON map[string]interface{}
+		if err := json.Unmarshal(errorBody, &errorJSON); err == nil {
+			h.writeJSON(w, errorJSON, resp.StatusCode)
+		} else {
+			h.writeError(w, fmt.Sprintf("HTTP错误: %s", resp.Status), resp.StatusCode)
+		}
+		return
+	}
+
+	isStream, _ := requestBody["stream"].(bool)
+	if isStream {
+		if err := StreamResponse(w, resp.Body, customModelID); err != nil {
+			if h.logger != nil {
+				h.logger.Error("Responses 流式响应处理失败: %v", err)
+			}
+		}
+		return
+	}
+
+	var responseJSON map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&responseJSON); err != nil {
+		h.writeError(w, fmt.Sprintf("解析响应失败: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if backendFormat == "openai" || backendFormat == "" {
+		h.writeJSON(w, convertChatResponseToResponses(responseJSON, customModelID))
+		return
+	}
+
+	if responseJSON["model"] != nil {
+		responseJSON["model"] = customModelID
+	}
 	h.writeJSON(w, responseJSON)
 }
 

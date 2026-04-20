@@ -15,21 +15,21 @@ domain_enabled:
     cursor.sh: true
 certificates: []
 apis:
-    - name: gpt-5.4
-      format: openai
-      endpoint: http://example.com
+    - name: 3R-GPT
+      format: responses
+      endpoint: https://code.3rcd.com
       custom_model_id: gpt-5.4
       target_model_id: gpt-5.4
       stream_mode: ""
-      custom_api_key: ""
+      custom_api_key: 
       active: true
-    - name: claude-sonnet-4-6
+    - name: 3R-Claude
       format: anthropic
-      endpoint: http://example.com
+      endpoint: https://code.3rcd.com
       custom_model_id: claude-sonnet-4-6
       target_model_id: claude-sonnet-4-6
       stream_mode: ""
-      custom_api_key: kGl3sVgIWbj9TRqDlr7mHE5F8b66VKVk
+      custom_api_key: ""
       active: true
 server:
     port: 443

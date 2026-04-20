@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"trae-proxy-go/internal/logger"
+	"trae-proxy-go/internal/traffic"
 	"trae-proxy-go/pkg/models"
 )
 
@@ -14,12 +15,13 @@ type Server struct {
 	config     *models.Config
 	logger     *logger.Logger
 	handler    *Handler
+	traffic    *traffic.Store
 	tlsConfig  *tls.Config
 	httpServer *http.Server
 }
 
 // NewServer 创建新的代理服务器
-func NewServer(config *models.Config, logger *logger.Logger, certFile, keyFile string) (*Server, error) {
+func NewServer(config *models.Config, logger *logger.Logger, trafficStore *traffic.Store, certFile, keyFile string) (*Server, error) {
 	handler := NewHandler(config, logger)
 
 	var tlsConfig *tls.Config
@@ -72,6 +74,7 @@ func NewServer(config *models.Config, logger *logger.Logger, certFile, keyFile s
 		config:    config,
 		logger:    logger,
 		handler:   handler,
+		traffic:   trafficStore,
 		tlsConfig: tlsConfig,
 	}, nil
 }
@@ -86,14 +89,15 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/v1/models", s.handler.HandleModels)
 	mux.HandleFunc("/v1/models/", s.handler.HandleModelByID)
 	mux.HandleFunc("/v1/chat/completions", s.handler.HandleChatCompletions)
+	mux.HandleFunc("/v1/responses", s.handler.HandleResponses)
 	mux.HandleFunc("/v1/messages", s.handler.HandleMessages)
 	mux.HandleFunc("/anthropic/v1/messages", s.handler.HandleMessages)
 
-	//wrappedMux := LoggingMiddleware(s.logger)(mux)
+	wrappedMux := LoggingMiddleware(s.logger, s.traffic)(mux)
 
 	s.httpServer = &http.Server{
 		Addr:      fmt.Sprintf(":%d", s.config.Server.Port),
-		Handler:   mux,
+		Handler:   wrappedMux,
 		TLSConfig: s.tlsConfig,
 	}
 

@@ -105,6 +105,16 @@ curl -k -X POST https://localhost/v1/chat/completions \
     "model": "test-model",
     "messages": [{"role": "user", "content": "Hello"}]
   }'
+
+# 测试 Responses（Cursor/OpenAI Responses 格式）
+curl -k -X POST https://localhost/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "model": "test-model",
+    "input": "Hello",
+    "stream": false
+  }'
 ```
 
 ## 已知问题和注意事项

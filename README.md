@@ -8,7 +8,7 @@
 
 ## 特性
 
-- **多协议支持**：兼容 OpenAI (`/v1/chat/completions`) 和 Anthropic (`/v1/messages`) 两种 API 格式
+- **多协议支持**：兼容 OpenAI Chat (`/v1/chat/completions`)、OpenAI Responses (`/v1/responses`) 和 Anthropic (`/v1/messages`)
 - **多后端路由**：按模型 ID 精确匹配后端，自动回退到第一个激活的 API
 - **模型 ID 映射**：对客户端暴露自定义模型 ID，转发时自动替换为目标模型 ID
 - **流式响应**：支持 SSE 流式和非流式响应，可按后端强制覆盖
@@ -70,7 +70,7 @@ certificates: []
 
 apis:
   - name: deepseek-r1
-    format: openai          # openai | anthropic
+    format: openai          # openai | responses | anthropic
     endpoint: https://api.deepseek.com
     custom_model_id: deepseek-reasoner   # 客户端使用的模型 ID
     target_model_id: deepseek-reasoner   # 实际发送给后端的模型 ID
@@ -85,7 +85,7 @@ server:
 
 | 字段 | 说明 |
 |---|---|
-| `format` | 后端 API 格式，`openai`（默认）或 `anthropic` |
+| `format` | 后端 API 格式，`openai`（默认）/ `responses` / `anthropic` |
 | `custom_model_id` | 对客户端暴露的模型名称 |
 | `target_model_id` | 转发给后端时实际使用的模型名称 |
 | `stream_mode` | 强制覆盖流式设置，为空则跟随客户端原始请求 |
@@ -154,10 +154,11 @@ server:
 | 路径 | 方法 | 说明 |
 |---|---|---|
 | `/v1/chat/completions` | POST | OpenAI 格式聊天请求 |
+| `/v1/responses` | POST | Cursor/OpenAI Responses 格式请求 |
 | `/v1/messages` | POST | Anthropic 格式请求 |
 | `/anthropic/v1/messages` | POST | Anthropic 格式请求（备用路径） |
-| `/v1/models` | GET | 模型列表（自动识别 OpenAI / Anthropic 格式） |
-| `/v1/models/:id` | GET | 单个模型详情（Anthropic 格式） |
+| `/v1/models` | GET | 模型列表（自动识别 OpenAI / Responses / Anthropic 格式） |
+| `/v1/models/:id` | GET | 单个模型详情（OpenAI/Responses/Anthropic） |
 
 ### 后端选择逻辑
 

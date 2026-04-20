@@ -10,6 +10,7 @@ import (
 	"trae-proxy-go/internal/config"
 	"trae-proxy-go/internal/logger"
 	"trae-proxy-go/internal/proxy"
+	"trae-proxy-go/internal/traffic"
 	"trae-proxy-go/internal/tray"
 	"trae-proxy-go/internal/webui"
 )
@@ -24,6 +25,7 @@ func main() {
 	flag.Parse()
 
 	log := logger.NewLogger(*debug)
+	trafficStore := traffic.NewStore(2000)
 
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
@@ -51,7 +53,7 @@ func main() {
 
 	iconFile := filepath.Join("internal", "tray", "icon.ico")
 
-	webUI := webui.NewWebUI(*configPath, cfg, log)
+	webUI := webui.NewWebUI(*configPath, cfg, log, trafficStore)
 
 	go func() {
 		var lastModTime time.Time
@@ -85,7 +87,7 @@ func main() {
 		}
 	}()
 
-	srv, err := proxy.NewServer(cfg, log, *certFile, *keyFile)
+	srv, err := proxy.NewServer(cfg, log, trafficStore, *certFile, *keyFile)
 	if err != nil {
 		log.Error("创建代理服务器失败: %v", err)
 		os.Exit(1)

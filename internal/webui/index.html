@@ -148,6 +148,36 @@
         .metric { border: 1px solid var(--border); background: var(--surface); }
         .subtle { color: var(--text-soft); }
         .surface-muted { background: var(--surface-muted); border: 1px solid var(--border); }
+        .log-area {
+            background: #0b1220;
+            color: #d6e2ff;
+            border: 1px solid color-mix(in srgb, var(--border) 72%, #000);
+            border-radius: 0.85rem;
+            max-height: 25rem;
+            overflow: auto;
+            padding: 0.9rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.78rem;
+            line-height: 1.45;
+        }
+        .log-line {
+            white-space: pre-wrap;
+            word-break: break-word;
+            padding: 0.3rem 0;
+            border-bottom: 1px dashed rgba(156, 172, 198, 0.2);
+        }
+        .log-line:last-child { border-bottom: none; }
+        .log-tag {
+            display: inline-block;
+            min-width: 4.8rem;
+            padding: 0.08rem 0.45rem;
+            border-radius: 999px;
+            font-weight: 700;
+            margin-right: 0.45rem;
+            text-align: center;
+        }
+        .log-tag.req { background: rgba(45, 212, 191, 0.22); color: #74ffe9; }
+        .log-tag.res { background: rgba(96, 165, 250, 0.24); color: #93c5fd; }
 
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
@@ -164,8 +194,6 @@
     <header class="panel rounded-2xl p-5 md:p-6">
         <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-                <p class="text-xs uppercase tracking-[0.28em] subtle">Proxy Dashboard</p>
-                <h1 class="display-font mt-1 text-3xl font-semibold leading-tight md:text-4xl">Trae-Proxy Control Center</h1>
                 <p class="mt-2 text-sm subtle">集中管理服务配置、证书签发与 API 转发。</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
@@ -301,7 +329,7 @@
         <section class="panel rounded-2xl p-5 md:p-6">
             <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                 <h2 class="text-lg font-semibold">API 转发配置</h2>
-                <button class="btn btn-primary" @click="addApi">+ 添加 API（插入顶部）</button>
+                <button class="btn btn-primary" @click="addApi">+ 添加 API</button>
             </div>
 
             <div v-if="config.apis.length === 0" class="surface-muted mt-4 rounded-xl p-6 text-center text-sm subtle">暂无 API 配置，点击“添加 API”开始创建。</div>
@@ -329,6 +357,7 @@
                             <span class="label">API 格式</span>
                             <select v-model="api.format" class="select">
                                 <option value="openai">OpenAI</option>
+                                <option value="responses">OpenAI Responses</option>
                                 <option value="anthropic">Anthropic (Claude)</option>
                                 <option value="gemini">Gemini</option>
                             </select>
@@ -361,6 +390,31 @@
                 </article>
             </div>
         </section>
+
+        <section class="panel rounded-2xl p-5 md:p-6">
+            <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold">代理日志</h2>
+                    <p class="text-xs subtle">实时查看代理请求和响应摘要（保留最近 2000 条）。</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button class="btn btn-secondary" @click="toggleLogAutoRefresh">
+                        {{ logAutoRefresh ? '暂停刷新' : '恢复刷新' }}
+                    </button>
+                    <button class="btn btn-danger" @click="clearTrafficLogs">清空日志</button>
+                </div>
+            </div>
+
+            <div class="mt-4 log-area">
+                <div v-if="trafficLogs.length === 0" class="subtle">暂无流量日志，发起 API 请求后会出现在这里。</div>
+                <div v-for="item in trafficLogs" :key="`log-${item.id}`" class="log-line">
+                    <span class="log-tag" :class="item.direction === 'request' ? 'req' : 'res'">
+                        {{ item.direction === 'request' ? 'REQUEST' : 'RESPONSE' }}
+                    </span>
+                    <span>{{ formatTrafficLine(item) }}</span>
+                </div>
+            </div>
+        </section>
     </main>
 
     <section v-else class="panel mt-6 rounded-2xl p-10 text-center">
@@ -378,6 +432,10 @@
             const bulkCertBusy = ref(false);
             const isDark = ref(false);
             const domainRows = ref([]);
+            const trafficLogs = ref([]);
+            const trafficLastID = ref(0);
+            const logAutoRefresh = ref(true);
+            let trafficTimer = null;
 
             const toStringBool = (value) => {
                 if (value === true || value === 'true') return 'true';
@@ -659,6 +717,83 @@
                 });
             };
 
+            const formatTrafficLine = (item) => {
+                const ts = item.timestamp || '';
+                if (item.direction === 'request') {
+                    const parts = [
+                        ts,
+                        item.method || '-',
+                        item.path || '-',
+                        item.query ? `?${item.query}` : '',
+                        item.remote_addr ? `from ${item.remote_addr}` : ''
+                    ].filter(Boolean);
+                    let line = parts.join(' | ');
+                    if (item.body) {
+                        line += `\nBody: ${item.body}`;
+                        if (item.body_truncated) line += '\nBody: [truncated]';
+                    }
+                    return line;
+                }
+
+                const resParts = [
+                    ts,
+                    item.method || '-',
+                    item.path || '-',
+                    `status=${item.status_code || 0}`,
+                    `bytes=${item.bytes_written || 0}`,
+                    `duration=${item.duration_ms || 0}ms`
+                ];
+                return resParts.join(' | ');
+            };
+
+            const mergeTrafficLogs = (incoming) => {
+                if (!Array.isArray(incoming) || incoming.length === 0) return;
+                trafficLogs.value.push(...incoming);
+                if (trafficLogs.value.length > 400) {
+                    trafficLogs.value = trafficLogs.value.slice(-400);
+                }
+                const last = incoming[incoming.length - 1];
+                if (last && typeof last.id === 'number') {
+                    trafficLastID.value = Math.max(trafficLastID.value, last.id);
+                }
+            };
+
+            const loadTrafficLogs = async (initial = false) => {
+                try {
+                    const url = initial
+                        ? '/api/traffic/logs?limit=200'
+                        : `/api/traffic/logs?since_id=${trafficLastID.value}&limit=200`;
+                    const res = await fetch(url);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    mergeTrafficLogs(Array.isArray(data.data) ? data.data : []);
+                } catch (err) {
+                    console.error(err);
+                }
+            };
+
+            const clearTrafficLogs = async () => {
+                try {
+                    await fetch('/api/traffic/clear', { method: 'POST' });
+                } catch (err) {
+                    console.error(err);
+                }
+                trafficLogs.value = [];
+                trafficLastID.value = 0;
+            };
+
+            const startTrafficPolling = () => {
+                if (trafficTimer) clearInterval(trafficTimer);
+                trafficTimer = setInterval(() => {
+                    if (!logAutoRefresh.value) return;
+                    loadTrafficLogs(false);
+                }, 1000);
+            };
+
+            const toggleLogAutoRefresh = () => {
+                logAutoRefresh.value = !logAutoRefresh.value;
+            };
+
             const dashboardStats = computed(() => {
                 if (!config.value) return { domains: 0, enabledDomains: 0, apis: 0, enabledApis: 0 };
 
@@ -677,6 +812,8 @@
             onMounted(() => {
                 initTheme();
                 loadConfig();
+                loadTrafficLogs(true);
+                startTrafficPolling();
             });
 
             return {
@@ -685,6 +822,8 @@
                 bulkCertBusy,
                 isDark,
                 domainRows,
+                trafficLogs,
+                logAutoRefresh,
                 dashboardStats,
                 loadConfig,
                 saveConfig,
@@ -695,6 +834,9 @@
                 writeHosts,
                 restoreHosts,
                 addApi,
+                formatTrafficLine,
+                clearTrafficLogs,
+                toggleLogAutoRefresh,
                 toggleTheme
             };
         }

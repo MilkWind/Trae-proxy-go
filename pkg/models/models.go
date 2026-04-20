@@ -10,7 +10,7 @@ type Certificate struct {
 // API route configuration.
 type API struct {
 	Name          string `yaml:"name" json:"name"`
-	Format        string `yaml:"format" json:"format"` // e.g. openai/anthropic/gemini
+	Format        string `yaml:"format" json:"format"` // e.g. openai/anthropic/responses/gemini
 	Endpoint      string `yaml:"endpoint" json:"endpoint"`
 	CustomModelID string `yaml:"custom_model_id" json:"custom_model_id"`
 	TargetModelID string `yaml:"target_model_id" json:"target_model_id"`

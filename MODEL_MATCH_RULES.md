@@ -56,6 +56,7 @@ Result:
 - Exact matches still win over fallback.
 - Keep API format/path compatible with the request type:
   - `/v1/chat/completions` flow should point to an OpenAI-compatible backend
+  - `/v1/responses` flow should point to a Responses-compatible backend (or OpenAI chat backend if bridge mode is expected)
   - `/v1/messages` flow should point to an Anthropic-compatible backend
 - If you need more advanced rules (prefix/regex/domain-based), add custom logic in `selectBackendByModel`.
 

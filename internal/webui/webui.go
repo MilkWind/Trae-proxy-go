@@ -13,6 +13,7 @@ import (
 	"trae-proxy-go/internal/cert"
 	"trae-proxy-go/internal/config"
 	"trae-proxy-go/internal/logger"
+	"trae-proxy-go/internal/traffic"
 	"trae-proxy-go/pkg/models"
 )
 
@@ -23,15 +24,17 @@ type WebUI struct {
 	configPath string
 	cfg        *models.Config
 	logger     *logger.Logger
+	traffic    *traffic.Store
 	server     *http.Server
 	mu         sync.Mutex
 }
 
-func NewWebUI(configPath string, cfg *models.Config, logger *logger.Logger) *WebUI {
+func NewWebUI(configPath string, cfg *models.Config, logger *logger.Logger, trafficStore *traffic.Store) *WebUI {
 	return &WebUI{
 		configPath: configPath,
 		cfg:        cfg,
 		logger:     logger,
+		traffic:    trafficStore,
 	}
 }
 
@@ -43,6 +46,8 @@ func (ui *WebUI) Start() error {
 	mux.HandleFunc("/api/cert/generate-bulk", ui.handleGenerateBulkCert)
 	mux.HandleFunc("/api/hosts/write", ui.handleWriteHosts)
 	mux.HandleFunc("/api/hosts/restore", ui.handleRestoreHosts)
+	mux.HandleFunc("/api/traffic/logs", ui.handleTrafficLogs)
+	mux.HandleFunc("/api/traffic/clear", ui.handleTrafficClear)
 
 	addr := fmt.Sprintf(":%d", ui.cfg.Server.ManagePort)
 	ui.server = &http.Server{
@@ -300,6 +305,48 @@ func (ui *WebUI) handleRestoreHosts(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"success"}`))
+}
+
+func (ui *WebUI) handleTrafficLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	if ui.traffic == nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+			"data":   []traffic.Entry{},
+		})
+		return
+	}
+
+	var sinceID uint64
+	var limit int
+	if _, err := fmt.Sscanf(strings.TrimSpace(r.URL.Query().Get("since_id")), "%d", &sinceID); err != nil {
+		sinceID = 0
+	}
+	if _, err := fmt.Sscanf(strings.TrimSpace(r.URL.Query().Get("limit")), "%d", &limit); err != nil {
+		limit = 200
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data":   ui.traffic.List(sinceID, limit),
+	})
+}
+
+func (ui *WebUI) handleTrafficClear(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if ui.traffic != nil {
+		ui.traffic.Clear()
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
 func (ui *WebUI) collectAllDomainsLocked() []string {
