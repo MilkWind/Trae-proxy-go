@@ -16,7 +16,7 @@ domain_enabled:
 certificates: []
 apis:
     - name: 3R-GPT
-      format: responses
+      format: openai
       endpoint: https://code.3rcd.com
       custom_model_id: gpt-5.4
       target_model_id: gpt-5.4
