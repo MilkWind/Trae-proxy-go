@@ -743,7 +743,12 @@
                     `bytes=${item.bytes_written || 0}`,
                     `duration=${item.duration_ms || 0}ms`
                 ];
-                return resParts.join(' | ');
+                let line = resParts.join(' | ');
+                if (item.body) {
+                    line += `\nBody: ${item.body}`;
+                    if (item.body_truncated) line += '\nBody: [truncated]';
+                }
+                return line;
             };
 
             const mergeTrafficLogs = (incoming) => {

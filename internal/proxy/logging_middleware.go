@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -16,11 +18,14 @@ import (
 )
 
 const maxLoggedBodyBytes = 8192
+const maxCapturedResponseBodyBytes = maxLoggedBodyBytes
 
 type loggingResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
 	written    int64
+	body       bytes.Buffer
+	truncated  bool
 }
 
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
@@ -31,7 +36,49 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	n, err := lrw.ResponseWriter.Write(b)
 	lrw.written += int64(n)
+	if n > 0 {
+		lrw.captureBody(b[:n])
+	}
 	return n, err
+}
+
+func (lrw *loggingResponseWriter) Flush() {
+	if f, ok := lrw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := lrw.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying response writer does not support hijacking")
+	}
+	return hj.Hijack()
+}
+
+func (lrw *loggingResponseWriter) Push(target string, opts *http.PushOptions) error {
+	pusher, ok := lrw.ResponseWriter.(http.Pusher)
+	if !ok {
+		return http.ErrNotSupported
+	}
+	return pusher.Push(target, opts)
+}
+
+func (lrw *loggingResponseWriter) captureBody(chunk []byte) {
+	if len(chunk) == 0 {
+		return
+	}
+	if lrw.body.Len() >= maxCapturedResponseBodyBytes {
+		lrw.truncated = true
+		return
+	}
+	remaining := maxCapturedResponseBodyBytes - lrw.body.Len()
+	if len(chunk) > remaining {
+		_, _ = lrw.body.Write(chunk[:remaining])
+		lrw.truncated = true
+		return
+	}
+	_, _ = lrw.body.Write(chunk)
 }
 
 type bufferedReadCloser struct {
@@ -79,10 +126,26 @@ func LoggingMiddleware(logger *logger.Logger, trafficStore *traffic.Store) func(
 
 			next.ServeHTTP(lrw, r)
 
-			durationMs := time.Since(start).Milliseconds()
+			finishedAt := time.Now()
+			durationMs := finishedAt.Sub(start).Milliseconds()
+			respBodyLog, respBodyTruncated := formatBodyForLog(lrw.body.Bytes(), lrw.Header().Get("Content-Type"), lrw.Header().Get("Content-Encoding"))
+			if lrw.truncated {
+				respBodyTruncated = true
+			}
+
 			if logger != nil {
-				logger.Info("[Response] Path: %s | Status: %d | Bytes: %d | DurationMs: %d",
-					reqPath, lrw.statusCode, lrw.written, durationMs)
+				if len(respBodyLog) > 0 {
+					if respBodyTruncated {
+						logger.Info("%s | %s | %s | status=%d | bytes=%d | duration=%dms | body=%s | body_truncated=true",
+							finishedAt.Format(time.RFC3339Nano), reqMethod, reqPath, lrw.statusCode, lrw.written, durationMs, respBodyLog)
+					} else {
+						logger.Info("%s | %s | %s | status=%d | bytes=%d | duration=%dms | body=%s",
+							finishedAt.Format(time.RFC3339Nano), reqMethod, reqPath, lrw.statusCode, lrw.written, durationMs, respBodyLog)
+					}
+				} else {
+					logger.Info("%s | %s | %s | status=%d | bytes=%d | duration=%dms",
+						finishedAt.Format(time.RFC3339Nano), reqMethod, reqPath, lrw.statusCode, lrw.written, durationMs)
+				}
 			}
 
 			if trafficStore != nil {
@@ -103,6 +166,8 @@ func LoggingMiddleware(logger *logger.Logger, trafficStore *traffic.Store) func(
 					StatusCode:   lrw.statusCode,
 					BytesWritten: lrw.written,
 					DurationMs:   durationMs,
+					Body:         respBodyLog,
+					BodyTruncated: respBodyTruncated,
 				})
 			}
 		})

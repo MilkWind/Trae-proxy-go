@@ -17,10 +17,10 @@ certificates: []
 apis:
     - name: 3R-GPT
       format: openai
-      endpoint: https://code.3rcd.com
+      endpoint: https://code.ppchat.vip
       custom_model_id: gpt-5.4
-      target_model_id: gpt-5.4
-      stream_mode: ""
+      target_model_id: gpt-5.3-codex
+      stream_mode: "false"
       custom_api_key: 
       active: true
     - name: 3R-Claude
