@@ -3,49 +3,38 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"trae-proxy-go/pkg/models"
 
 	"gopkg.in/yaml.v3"
 )
 
-// LoadConfig 从文件加载配置
+// LoadConfig loads configuration from file.
 func LoadConfig(configPath string) (*models.Config, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
 	}
 
-	var config models.Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	var cfg models.Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
 
-	// 验证配置
-	if err := validateConfig(&config); err != nil {
+	if err := normalizeConfig(&cfg); err != nil {
 		return nil, fmt.Errorf("配置验证失败: %w", err)
 	}
 
-	// 设置默认值
-	if config.Server.ManagePort == 0 {
-		config.Server.ManagePort = 8080
-	}
-	// 将默认 Domain 添加到 Domains(如果 Domains 为空)
-	if len(config.Domains) == 0 && config.Domain != "" {
-		config.Domains = []string{config.Domain}
-	}
-
-	for i := range config.APIs {
-		if config.APIs[i].Format == "" {
-			config.APIs[i].Format = "openai" // 默认格式
-		}
-	}
-
-	return &config, nil
+	return &cfg, nil
 }
 
-// SaveConfig 保存配置到文件
-func SaveConfig(config *models.Config, configPath string) error {
-	data, err := yaml.Marshal(config)
+// SaveConfig stores configuration to file.
+func SaveConfig(cfg *models.Config, configPath string) error {
+	if err := normalizeConfig(cfg); err != nil {
+		return fmt.Errorf("配置验证失败: %w", err)
+	}
+
+	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %w", err)
 	}
@@ -57,43 +46,99 @@ func SaveConfig(config *models.Config, configPath string) error {
 	return nil
 }
 
-// validateConfig 验证配置的有效性
-func validateConfig(config *models.Config) error {
-	if config.Domain == "" && len(config.Domains) == 0 && len(config.Certificates) == 0 {
-		return fmt.Errorf("域名或证书列表不能为空")
+func normalizeConfig(cfg *models.Config) error {
+	if cfg.Server.ManagePort == 0 {
+		cfg.Server.ManagePort = 8080
 	}
 
-	if len(config.APIs) == 0 {
+	if cfg.DomainEnabled == nil {
+		cfg.DomainEnabled = make(map[string]bool)
+	}
+
+	if len(cfg.Domains) == 0 && strings.TrimSpace(cfg.Domain) != "" {
+		cfg.Domains = []string{strings.TrimSpace(cfg.Domain)}
+	}
+
+	if len(cfg.Domains) == 0 {
+		cfg.Domain = ""
+	} else {
+		cfg.Domain = strings.TrimSpace(cfg.Domains[0])
+	}
+
+	seen := make(map[string]struct{}, len(cfg.Domains))
+	normalizedDomains := make([]string, 0, len(cfg.Domains))
+	for _, domain := range cfg.Domains {
+		d := strings.TrimSpace(domain)
+		if d == "" {
+			continue
+		}
+		if _, ok := seen[d]; ok {
+			continue
+		}
+		seen[d] = struct{}{}
+		normalizedDomains = append(normalizedDomains, d)
+		if _, ok := cfg.DomainEnabled[d]; !ok {
+			cfg.DomainEnabled[d] = true
+		}
+	}
+	cfg.Domains = normalizedDomains
+
+	// Remove stale domain flags.
+	for d := range cfg.DomainEnabled {
+		if _, ok := seen[strings.TrimSpace(d)]; !ok {
+			delete(cfg.DomainEnabled, d)
+		}
+	}
+
+	for i := range cfg.APIs {
+		if cfg.APIs[i].Format == "" {
+			cfg.APIs[i].Format = "openai"
+		}
+	}
+
+	return validateConfig(cfg)
+}
+
+// validateConfig validates configuration.
+func validateConfig(cfg *models.Config) error {
+	if len(cfg.Domains) == 0 && len(cfg.Certificates) == 0 {
+		return fmt.Errorf("至少需要配置一个域名或证书")
+	}
+
+	if len(cfg.APIs) == 0 {
 		return fmt.Errorf("至少需要配置一个API")
 	}
 
-	for i, api := range config.APIs {
-		if api.Name == "" {
+	for i, api := range cfg.APIs {
+		if strings.TrimSpace(api.Name) == "" {
 			return fmt.Errorf("API配置[%d]的名称不能为空", i)
 		}
-		if api.Endpoint == "" {
+		if strings.TrimSpace(api.Endpoint) == "" {
 			return fmt.Errorf("API配置[%d]的endpoint不能为空", i)
 		}
-		if api.CustomModelID == "" {
+		if strings.TrimSpace(api.CustomModelID) == "" {
 			return fmt.Errorf("API配置[%d]的custom_model_id不能为空", i)
 		}
-		if api.TargetModelID == "" {
+		if strings.TrimSpace(api.TargetModelID) == "" {
 			return fmt.Errorf("API配置[%d]的target_model_id不能为空", i)
 		}
 	}
 
-	if config.Server.Port <= 0 || config.Server.Port > 65535 {
-		return fmt.Errorf("服务器端口必须在1-65535之间")
+	if cfg.Server.Port <= 0 || cfg.Server.Port > 65535 {
+		return fmt.Errorf("服务端口必须在1-65535之间")
 	}
 
 	return nil
 }
 
-// GetDefaultConfig 获取默认配置
+// GetDefaultConfig returns default configuration.
 func GetDefaultConfig() *models.Config {
 	return &models.Config{
 		Domain:  "api.openai.com",
 		Domains: []string{"api.openai.com"},
+		DomainEnabled: map[string]bool{
+			"api.openai.com": true,
+		},
 		APIs: []models.API{
 			{
 				Name:          "默认OpenAI API",
